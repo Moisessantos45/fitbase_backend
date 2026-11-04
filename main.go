@@ -174,12 +174,12 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	addr := ":4107"
+	addr := ":4109"
 	if strings.TrimSpace(os.Getenv("GO_ENV")) == "prod" {
-		addr = "127.0.0.1:4107"
+		addr = "127.0.0.1:4109"
 	}
 
-	log.Println("Server starting on :4107...")
+	log.Println("Server starting on :4109...")
 	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           r,
