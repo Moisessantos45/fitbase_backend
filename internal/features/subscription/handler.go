@@ -155,3 +155,35 @@ func (h *Handler) CancelSubscription(c *gin.Context) {
 		"data":    ticket,
 	})
 }
+
+func (h *Handler) RenewSubscription(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	_, authID, err := utils.ExtractedParamsJwt(c)
+	if err != nil {
+		helper.RespondError(c, errorsx.ErrUnauthorized)
+		return
+	}
+
+	subID, err := utils.ValidateParamsId(c, "id")
+	if err != nil {
+		helper.RespondError(c, errorsx.BadRequest("ID de suscripción inválido"))
+		return
+	}
+
+	var req RenewSubscriptionRequest
+	if !helper.BindJSON(c, &req) {
+		return
+	}
+
+	ticket, err := h.s.RenewSubscription(ctx, authID, subID, req)
+	if err != nil {
+		helper.RespondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Suscripción renovada exitosamente",
+		"data":    ticket,
+	})
+}

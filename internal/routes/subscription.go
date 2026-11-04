@@ -20,6 +20,7 @@ func SubscriptionRoutes(rg *gin.RouterGroup) {
 	protected.Use(idempotencyMiddleware())
 	{
 		protected.POST("/subscriptions/subscribe", h.PurchaseSubscription)
+		protected.POST("/subscriptions/:id/renew", h.RenewSubscription)
 		protected.GET("/subscriptions/my-subscriptions", h.GetMySubscriptions)
 		protected.GET("/gyms/:id/subscriptions", h.GetAllByGym)
 		protected.PUT("/subscriptions/:id/cancel", h.CancelSubscription)

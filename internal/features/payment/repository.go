@@ -377,6 +377,42 @@ func (r *PostgresRepository) GetDayPassDetailsByID(ctx context.Context, dayPassI
 	return &details, nil
 }
 
+func (r *PostgresRepository) GetSubscriptionDetailsByID(ctx context.Context, subID uint64) (*SubscriptionPaymentDetails, error) {
+	var details SubscriptionPaymentDetails
+	err := r.db.WithContext(ctx).
+		Table("subscriptions").
+		Select(`
+			subscriptions.id,
+			subscriptions.slug::text AS slug,
+			gyms.id AS gym_id,
+			gyms.name AS gym_name,
+			plans.id AS plan_id,
+			plans.name AS plan_name,
+			plans.price AS plan_price,
+			TRIM(CONCAT(users.first_name, ' ', users.last_name)) AS full_name,
+			auths.email AS email,
+			COALESCE(TO_CHAR(subscriptions.start_date, 'YYYY-MM-DD'), '') AS start_date,
+			COALESCE(TO_CHAR(subscriptions.end_date, 'YYYY-MM-DD'), '') AS end_date,
+			subscriptions.auto_renew
+		`).
+		Joins("JOIN plans ON plans.id = subscriptions.plan_id").
+		Joins("JOIN gyms ON gyms.id = plans.gym_id").
+		Joins("JOIN users ON users.id = subscriptions.user_id").
+		Joins("JOIN auths ON auths.id = users.auth_id").
+		Where("subscriptions.id = ?", subID).
+		Scan(&details).Error
+
+	if err != nil {
+		return nil, helper.TranslateDBError(err)
+	}
+
+	if details.ID == 0 {
+		return nil, errorsx.ErrNotFound
+	}
+
+	return &details, nil
+}
+
 func (r *PostgresRepository) GetUserProfileByAuthID(ctx context.Context, authID uint64) (*UserAuthProfile, error) {
 	var profile UserAuthProfile
 	err := r.db.WithContext(ctx).

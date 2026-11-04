@@ -5,6 +5,7 @@ import (
 	"fitbase/internal/models"
 	"fitbase/internal/shared/errorsx"
 	"fitbase/internal/shared/helper"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -49,18 +50,62 @@ func (r *PostgresRepository) GetTicketBySlug(ctx context.Context, slug uuid.UUID
 			gyms.name AS gym_name,
 			plans.id AS plan_id,
 			plans.name AS plan_name,
+			plans.price AS plan_price,
 			TRIM(CONCAT(users.first_name, ' ', users.last_name)) AS full_name,
+			auths.email AS email,
 			status_subscriptions.id AS status_id,
 			status_subscriptions.name AS status_name,
 			COALESCE(TO_CHAR(subscriptions.start_date, 'YYYY-MM-DD'), '') AS start_date,
 			COALESCE(TO_CHAR(subscriptions.end_date, 'YYYY-MM-DD'), '') AS end_date,
+			subscriptions.auto_renew,
 			subscriptions.created_at
 		`).
 		Joins("JOIN plans ON plans.id = subscriptions.plan_id").
 		Joins("JOIN gyms ON gyms.id = plans.gym_id").
 		Joins("JOIN users ON users.id = subscriptions.user_id").
+		Joins("JOIN auths ON auths.id = users.auth_id").
 		Joins("JOIN status_subscriptions ON status_subscriptions.id = subscriptions.status_id").
 		Where("subscriptions.slug = ?", slug).
+		Scan(&ticket).Error
+
+	if err != nil {
+		return nil, helper.TranslateDBError(err)
+	}
+
+	if ticket.ID == 0 {
+		return nil, errorsx.ErrNotFound
+	}
+
+	return &ticket, nil
+}
+
+func (r *PostgresRepository) GetTicketByID(ctx context.Context, id uint64) (*SubscriptionTicketResponse, error) {
+	var ticket SubscriptionTicketResponse
+	err := r.db.WithContext(ctx).
+		Table("subscriptions").
+		Select(`
+			subscriptions.id,
+			subscriptions.slug::text AS slug,
+			gyms.id AS gym_id,
+			gyms.name AS gym_name,
+			plans.id AS plan_id,
+			plans.name AS plan_name,
+			plans.price AS plan_price,
+			TRIM(CONCAT(users.first_name, ' ', users.last_name)) AS full_name,
+			auths.email AS email,
+			status_subscriptions.id AS status_id,
+			status_subscriptions.name AS status_name,
+			COALESCE(TO_CHAR(subscriptions.start_date, 'YYYY-MM-DD'), '') AS start_date,
+			COALESCE(TO_CHAR(subscriptions.end_date, 'YYYY-MM-DD'), '') AS end_date,
+			subscriptions.auto_renew,
+			subscriptions.created_at
+		`).
+		Joins("JOIN plans ON plans.id = subscriptions.plan_id").
+		Joins("JOIN gyms ON gyms.id = plans.gym_id").
+		Joins("JOIN users ON users.id = subscriptions.user_id").
+		Joins("JOIN auths ON auths.id = users.auth_id").
+		Joins("JOIN status_subscriptions ON status_subscriptions.id = subscriptions.status_id").
+		Where("subscriptions.id = ?", id).
 		Scan(&ticket).Error
 
 	if err != nil {
@@ -217,6 +262,32 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uint64) (*models.Su
 		return nil, helper.TranslateDBError(err)
 	}
 	return &sub, nil
+}
+
+func (r *PostgresRepository) Renew(ctx context.Context, id uint64, newStartDate, newEndDate time.Time, paymentMethodID uint64) error {
+	updates := map[string]any{
+		"start_date": newStartDate,
+		"end_date":   newEndDate,
+		"status_id":  models.StatusSubscriptionActiveID,
+	}
+	if paymentMethodID > 0 {
+		updates["payment_method_id"] = paymentMethodID
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&models.Subscription{}).
+		Where("id = ?", id).
+		Updates(updates)
+
+	if result.Error != nil {
+		return helper.TranslateDBError(result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return errorsx.ErrNotFound
+	}
+
+	return nil
 }
 
 func (r *PostgresRepository) Cancel(ctx context.Context, id uint64) error {

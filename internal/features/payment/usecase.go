@@ -171,11 +171,47 @@ func (uc *UseCase) RegisterCashPayment(ctx context.Context, authID uint64, req R
 				Amount:            receipt.Amount,
 				PaymentMethodName: receipt.PaymentMethodName,
 				TicketCode:        dpDetails.Slug,
+				QRCodeURL:         fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", dpDetails.Slug),
 				VisitDate:         dpDetails.VisitDate,
 			}
 			html, err := renderer.RenderDayPassPaymentConfirmed(data)
 			if err == nil {
 				_ = utils.EnqueueEmail([]string{dpDetails.Email}, fmt.Sprintf("Pago Confirmado: Tu Pase de un Día en %s", dpDetails.GymName), html)
+			}
+		}()
+	}
+
+	if req.SubscriptionID != nil && *req.SubscriptionID > 0 {
+		subID := *req.SubscriptionID
+		go func() {
+			subDetails, err := uc.repo.GetSubscriptionDetailsByID(context.Background(), subID)
+			if err != nil || subDetails == nil || strings.TrimSpace(subDetails.Email) == "" {
+				return
+			}
+			renderer, err := templates.NewEmailRenderer()
+			if err != nil {
+				return
+			}
+			name := strings.TrimSpace(subDetails.FullName)
+			if name == "" {
+				name = "Socio"
+			}
+			qrURL := fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", subDetails.Slug)
+			data := templates.SubscriptionCreatedData{
+				Name:       name,
+				GymName:    subDetails.GymName,
+				PlanName:   subDetails.PlanName,
+				PlanPrice:  receipt.Amount,
+				StartDate:  subDetails.StartDate,
+				EndDate:    subDetails.EndDate,
+				TicketCode: subDetails.Slug,
+				QRCodeURL:  qrURL,
+				AutoRenew:  subDetails.AutoRenew,
+				IsRenewal:  false,
+			}
+			html, err := renderer.RenderSubscriptionCreated(data)
+			if err == nil {
+				_ = utils.EnqueueEmail([]string{subDetails.Email}, fmt.Sprintf("Pago Confirmado: Membresía y Credencial en %s", subDetails.GymName), html)
 			}
 		}()
 	}
@@ -554,6 +590,7 @@ func (uc *UseCase) processCheckoutCompleted(ctx context.Context, sess *stripe.Ch
 	visitDateStr := sess.Metadata["visit_date"]
 
 	var createdDayPassID *uint64
+	var createdSubID *uint64
 
 	err := uc.repo.WithTransaction(func(txRepo Repository) error {
 		payment, err := txRepo.GetPaymentByID(ctx, paymentID)
@@ -596,6 +633,7 @@ func (uc *UseCase) processCheckoutCompleted(ctx context.Context, sess *stripe.Ch
 				return err
 			}
 			subID = &sub.ID
+			createdSubID = &sub.ID
 
 		case "daypass":
 			var vDate time.Time
@@ -692,11 +730,51 @@ func (uc *UseCase) processCheckoutCompleted(ctx context.Context, sess *stripe.Ch
 				Amount:            amount,
 				PaymentMethodName: "Tarjeta de Crédito / Débito (Stripe)",
 				TicketCode:        dpDetails.Slug,
+				QRCodeURL:         fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", dpDetails.Slug),
 				VisitDate:         dpDetails.VisitDate,
 			}
 			html, err := renderer.RenderDayPassPaymentConfirmed(data)
 			if err == nil {
 				_ = utils.EnqueueEmail([]string{dpDetails.Email}, fmt.Sprintf("Pago Confirmado: Tu Pase de un Día en %s", dpDetails.GymName), html)
+			}
+		}()
+	}
+
+	if createdSubID != nil && *createdSubID > 0 {
+		sID := *createdSubID
+		go func() {
+			subDetails, err := uc.repo.GetSubscriptionDetailsByID(context.Background(), sID)
+			if err != nil || subDetails == nil || strings.TrimSpace(subDetails.Email) == "" {
+				return
+			}
+			renderer, err := templates.NewEmailRenderer()
+			if err != nil {
+				return
+			}
+			name := strings.TrimSpace(subDetails.FullName)
+			if name == "" {
+				name = "Socio"
+			}
+			amount := float64(sess.AmountTotal) / 100.0
+			if amount <= 0 {
+				amount = subDetails.PlanPrice
+			}
+			qrURL := fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", subDetails.Slug)
+			data := templates.SubscriptionCreatedData{
+				Name:       name,
+				GymName:    subDetails.GymName,
+				PlanName:   subDetails.PlanName,
+				PlanPrice:  amount,
+				StartDate:  subDetails.StartDate,
+				EndDate:    subDetails.EndDate,
+				TicketCode: subDetails.Slug,
+				QRCodeURL:  qrURL,
+				AutoRenew:  subDetails.AutoRenew,
+				IsRenewal:  false,
+			}
+			html, err := renderer.RenderSubscriptionCreated(data)
+			if err == nil {
+				_ = utils.EnqueueEmail([]string{subDetails.Email}, fmt.Sprintf("Tu Membresía y Credencial Digital en %s", subDetails.GymName), html)
 			}
 		}()
 	}

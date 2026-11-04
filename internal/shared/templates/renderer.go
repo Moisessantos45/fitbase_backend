@@ -50,10 +50,13 @@ type SubscriptionCreatedData struct {
 	Name       string
 	GymName    string
 	PlanName   string
+	PlanPrice  float64
 	StartDate  string
 	EndDate    string
 	TicketCode string
+	QRCodeURL  string
 	AutoRenew  bool
+	IsRenewal  bool
 }
 
 type DayPassTicketData struct {
@@ -63,6 +66,7 @@ type DayPassTicketData struct {
 	PlanPrice  float64
 	VisitDate  string
 	TicketCode string
+	QRCodeURL  string
 	IsPaid     bool
 }
 
@@ -73,6 +77,7 @@ type DayPassPaymentConfirmedData struct {
 	Amount            float64
 	PaymentMethodName string
 	TicketCode        string
+	QRCodeURL         string
 	VisitDate         string
 }
 

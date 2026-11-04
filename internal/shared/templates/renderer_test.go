@@ -28,16 +28,37 @@ func TestRenderer(t *testing.T) {
 		Name:       "Test User",
 		GymName:    "FitNes Planet",
 		PlanName:   "Plan VIP",
+		PlanPrice:  500.00,
 		StartDate:  "2026-11-01",
 		EndDate:    "2026-12-01",
 		TicketCode: "SUB-12345",
 		AutoRenew:  true,
+		IsRenewal:  false,
 	})
 	if err != nil {
 		t.Errorf("RenderSubscriptionCreated error: %v", err)
 	}
-	if !strings.Contains(subHtml, "SUB-12345") || !strings.Contains(subHtml, "Activada") {
+	if !strings.Contains(subHtml, "SUB-12345") || !strings.Contains(subHtml, "Activada") || !strings.Contains(subHtml, "api.qrserver.com") {
 		t.Errorf("SubscriptionCreated missing content")
+	}
+
+	// 2b. Subscription Renewed
+	subRenewHtml, err := r.RenderSubscriptionCreated(SubscriptionCreatedData{
+		Name:       "Test User",
+		GymName:    "FitNes Planet",
+		PlanName:   "Plan VIP",
+		PlanPrice:  500.00,
+		StartDate:  "2026-11-01",
+		EndDate:    "2026-12-01",
+		TicketCode: "SUB-12345",
+		AutoRenew:  true,
+		IsRenewal:  true,
+	})
+	if err != nil {
+		t.Errorf("RenderSubscriptionCreated renewal error: %v", err)
+	}
+	if !strings.Contains(subRenewHtml, "Renovada") {
+		t.Errorf("SubscriptionCreated renewal missing content")
 	}
 
 	// 3. Day Pass Ticket (Pending)

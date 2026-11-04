@@ -120,6 +120,21 @@ type DayPassPaymentDetails struct {
 	IsUsed    bool   `gorm:"column:is_used"`
 }
 
+type SubscriptionPaymentDetails struct {
+	ID        uint64  `gorm:"column:id"`
+	Slug      string  `gorm:"column:slug"`
+	GymID     uint64  `gorm:"column:gym_id"`
+	GymName   string  `gorm:"column:gym_name"`
+	PlanID    uint64  `gorm:"column:plan_id"`
+	PlanName  string  `gorm:"column:plan_name"`
+	PlanPrice float64 `gorm:"column:plan_price"`
+	FullName  string  `gorm:"column:full_name"`
+	Email     string  `gorm:"column:email"`
+	StartDate string  `gorm:"column:start_date"`
+	EndDate   string  `gorm:"column:end_date"`
+	AutoRenew bool    `gorm:"column:auto_renew"`
+}
+
 type Repository interface {
 	WithTransaction(fn func(repo Repository) error) error
 	Create(ctx context.Context, payment *models.Payment) error
@@ -141,6 +156,7 @@ type Repository interface {
 	UpdateSubscription(ctx context.Context, subID uint64, updates map[string]any) error
 	CreateDayPass(ctx context.Context, dp *models.DayPass) error
 	GetDayPassDetailsByID(ctx context.Context, dayPassID uint64) (*DayPassPaymentDetails, error)
+	GetSubscriptionDetailsByID(ctx context.Context, subID uint64) (*SubscriptionPaymentDetails, error)
 	GetUserProfileByAuthID(ctx context.Context, authID uint64) (*UserAuthProfile, error)
 	GetGymByID(ctx context.Context, gymID uint64) (*models.Gym, error)
 	GetSchedulesByGymID(ctx context.Context, gymID uint64) ([]models.GymSchedule, error)

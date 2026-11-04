@@ -43,6 +43,7 @@ func sendDayPassEmailAsync(ticket *DayPassTicketResponse) {
 			PlanPrice:  ticket.PlanPrice,
 			VisitDate:  ticket.VisitDate,
 			TicketCode: ticket.Slug,
+			QRCodeURL:  fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", ticket.Slug),
 			IsPaid:     ticket.IsPaid,
 		}
 		html, err := renderer.RenderDayPassTicket(data)

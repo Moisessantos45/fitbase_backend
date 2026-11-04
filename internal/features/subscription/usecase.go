@@ -22,12 +22,53 @@ func NewUseCase(repo Repository) Service {
 	return &UseCase{repo: repo}
 }
 
+func sendSubscriptionEmailAsync(ticket *SubscriptionTicketResponse, email string, isRenewal bool) {
+	targetEmail := strings.TrimSpace(email)
+	if targetEmail == "" && ticket != nil {
+		targetEmail = strings.TrimSpace(ticket.Email)
+	}
+	if ticket == nil || targetEmail == "" {
+		return
+	}
+	go func() {
+		renderer, err := templates.NewEmailRenderer()
+		if err != nil {
+			return
+		}
+		name := strings.TrimSpace(ticket.FullName)
+		if name == "" {
+			name = "Socio"
+		}
+		qrURL := fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", ticket.Slug)
+		data := templates.SubscriptionCreatedData{
+			Name:       name,
+			GymName:    ticket.GymName,
+			PlanName:   ticket.PlanName,
+			PlanPrice:  ticket.PlanPrice,
+			StartDate:  ticket.StartDate,
+			EndDate:    ticket.EndDate,
+			TicketCode: ticket.Slug,
+			QRCodeURL:  qrURL,
+			AutoRenew:  ticket.AutoRenew,
+			IsRenewal:  isRenewal,
+		}
+		html, err := renderer.RenderSubscriptionCreated(data)
+		if err == nil {
+			subject := fmt.Sprintf("Tu Membresía y Credencial Digital — %s", ticket.GymName)
+			if isRenewal {
+				subject = fmt.Sprintf("¡Membresía Renovada Exitosamente! — %s", ticket.GymName)
+			}
+			_ = utils.EnqueueEmail([]string{targetEmail}, subject, html)
+		}
+	}()
+}
+
 func (uc *UseCase) PurchaseSubscription(ctx context.Context, authID uint64, req PurchaseSubscriptionRequest) (*SubscriptionTicketResponse, error) {
 	if authID == 0 || req.PlanID == 0 || req.PaymentMethodID == 0 {
 		return nil, errorsx.BadRequest("Parámetros inválidos")
 	}
 
-	userID, fullName, _, email, err := uc.repo.GetUserDetailsByAuthID(ctx, authID)
+	userID, _, _, email, err := uc.repo.GetUserDetailsByAuthID(ctx, authID)
 	if err != nil {
 		return nil, errorsx.NotFound("Perfil de usuario no encontrado")
 	}
@@ -88,35 +129,8 @@ func (uc *UseCase) PurchaseSubscription(ctx context.Context, authID uint64, req 
 		return nil, err
 	}
 
-	if email != "" {
-		recipientEmail := email
-		go func() {
-			renderer, err := templates.NewEmailRenderer()
-			if err != nil {
-				return
-			}
-			name := strings.TrimSpace(fullName)
-			if name == "" {
-				name = strings.TrimSpace(ticket.FullName)
-			}
-			if name == "" {
-				name = "Atleta"
-			}
-			data := templates.SubscriptionCreatedData{
-				Name:       name,
-				GymName:    ticket.GymName,
-				PlanName:   ticket.PlanName,
-				StartDate:  ticket.StartDate,
-				EndDate:    ticket.EndDate,
-				TicketCode: ticket.Slug,
-				AutoRenew:  ticket.AutoRenew,
-			}
-			html, err := renderer.RenderSubscriptionCreated(data)
-			if err == nil {
-				_ = utils.EnqueueEmail([]string{recipientEmail}, fmt.Sprintf("¡Tu suscripción está lista! — %s", ticket.GymName), html)
-			}
-		}()
-	}
+	ticket.QRCodeURL = fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", ticket.Slug)
+	sendSubscriptionEmailAsync(ticket, email, false)
 
 	return ticket, nil
 }
@@ -191,6 +205,8 @@ func (uc *UseCase) GetTicketBySlug(ctx context.Context, slugStr string) (*Subscr
 			ticket.RemainingDays = int(targetEnd.Sub(today).Hours()/24) + 1
 		}
 	}
+
+	ticket.QRCodeURL = fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", ticket.Slug)
 
 	return ticket, nil
 }
@@ -314,6 +330,90 @@ func (uc *UseCase) CancelSubscription(ctx context.Context, authID, subscriptionI
 		return nil, err
 	}
 	ticket.RemainingDays = remainingDays
+	ticket.QRCodeURL = fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", ticket.Slug)
+
+	return ticket, nil
+}
+
+func (uc *UseCase) RenewSubscription(ctx context.Context, authID, subscriptionID uint64, req RenewSubscriptionRequest) (*SubscriptionTicketResponse, error) {
+	if authID == 0 || subscriptionID == 0 || req.PaymentMethodID == 0 {
+		return nil, errorsx.BadRequest("Parámetros inválidos")
+	}
+
+	sub, err := uc.repo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, errorsx.NotFound("Suscripción no encontrada")
+	}
+
+	planModel, err := uc.repo.GetPlanByID(ctx, sub.PlanID)
+	if err != nil || !planModel.Active {
+		return nil, errorsx.BadRequest("El plan asociado no se encuentra disponible o activo")
+	}
+
+	isAuthorized := false
+	userID, _, _, _, err := uc.repo.GetUserDetailsByAuthID(ctx, authID)
+	if err == nil && userID == sub.UserID {
+		isAuthorized = true
+	}
+
+	if !isAuthorized {
+		ownerID, err := uc.repo.GetOwnerIDByAuthID(ctx, authID)
+		if err == nil && ownerID > 0 {
+			gymOwnerID, err := uc.repo.GetGymOwnerID(ctx, planModel.GymID)
+			if err == nil && ownerID == gymOwnerID {
+				isAuthorized = true
+			}
+		}
+	}
+
+	if !isAuthorized {
+		managerGymID, err := uc.repo.GetManagerGymID(ctx, authID)
+		if err == nil && managerGymID == planModel.GymID {
+			isAuthorized = true
+		}
+	}
+
+	if !isAuthorized {
+		return nil, errorsx.Forbidden("No tienes autorización para renovar esta suscripción")
+	}
+
+	durationDays := planModel.Duration
+	if durationDays <= 0 {
+		durationDays = 30
+	}
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	subEndDate := time.Date(sub.EndDate.Year(), sub.EndDate.Month(), sub.EndDate.Day(), 0, 0, 0, 0, now.Location())
+
+	var newStartDate, newEndDate time.Time
+	if subEndDate.Before(today) {
+		newStartDate = today
+		newEndDate = today.AddDate(0, 0, durationDays)
+	} else {
+		newStartDate = sub.StartDate
+		newEndDate = subEndDate.AddDate(0, 0, durationDays)
+	}
+
+	if err := uc.repo.Renew(ctx, subscriptionID, newStartDate, newEndDate, req.PaymentMethodID); err != nil {
+		return nil, err
+	}
+
+	ticket, err := uc.repo.GetTicketByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if parsedEndDate, err := time.Parse("2006-01-02", ticket.EndDate); err == nil {
+		targetEnd := time.Date(parsedEndDate.Year(), parsedEndDate.Month(), parsedEndDate.Day(), 0, 0, 0, 0, now.Location())
+		if !targetEnd.Before(today) {
+			ticket.RemainingDays = int(targetEnd.Sub(today).Hours()/24) + 1
+		}
+	}
+
+	ticket.QRCodeURL = fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=%s", ticket.Slug)
+
+	sendSubscriptionEmailAsync(ticket, ticket.Email, true)
 
 	return ticket, nil
 }
