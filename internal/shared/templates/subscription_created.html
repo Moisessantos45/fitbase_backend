@@ -70,7 +70,7 @@ body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Robo
         <td style="color: #8E8E93; font-size: 13px; padding: 8px 12px; border-bottom: 1px solid #222226;">Plan</td>
         <td style="color: #D2F801; font-size: 14px; font-weight: 700; text-align: right; padding: 8px 12px; border-bottom: 1px solid #222226;">{{.PlanName}}</td>
       </tr>
-      {{if gt .PlanPrice 0.0}}
+      {{if .PlanPrice}}
       <tr>
         <td style="color: #8E8E93; font-size: 13px; padding: 8px 12px; border-bottom: 1px solid #222226;">Precio</td>
         <td style="color: #FFFFFF; font-size: 14px; font-weight: 600; text-align: right; padding: 8px 12px; border-bottom: 1px solid #222226;">${{printf "%.2f" .PlanPrice}} MXN</td>

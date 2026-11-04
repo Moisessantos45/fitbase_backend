@@ -386,14 +386,19 @@ func (uc *UseCase) RenewSubscription(ctx context.Context, authID, subscriptionID
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	subEndDate := time.Date(sub.EndDate.Year(), sub.EndDate.Month(), sub.EndDate.Day(), 0, 0, 0, 0, now.Location())
 
-	var newStartDate, newEndDate time.Time
-	if subEndDate.Before(today) {
-		newStartDate = today
-		newEndDate = today.AddDate(0, 0, durationDays)
-	} else {
-		newStartDate = sub.StartDate
-		newEndDate = subEndDate.AddDate(0, 0, durationDays)
+	// 1. Verificar si la suscripción que se intenta renovar aún se encuentra activa
+	if sub.StatusID == models.StatusSubscriptionActiveID && !subEndDate.Before(today) {
+		return nil, errorsx.Conflict(fmt.Sprintf("No se puede renovar la suscripción porque aún cuentas con una membresía activa hasta el %s", sub.EndDate.Format("2006-01-02")))
 	}
+
+	// 2. Verificar si el usuario cuenta con otra suscripción activa en esta misma sede
+	activeSub, err := uc.repo.GetActiveByUserID(ctx, sub.UserID, planModel.GymID)
+	if err == nil && activeSub != nil && activeSub.ID != sub.ID {
+		return nil, errorsx.Conflict(fmt.Sprintf("No se puede renovar porque ya cuentas con una suscripción activa en esta sede hasta el %s", activeSub.EndDate.Format("2006-01-02")))
+	}
+
+	newStartDate := today
+	newEndDate := today.AddDate(0, 0, durationDays)
 
 	if err := uc.repo.Renew(ctx, subscriptionID, newStartDate, newEndDate, req.PaymentMethodID); err != nil {
 		return nil, err
