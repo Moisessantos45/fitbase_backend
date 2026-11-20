@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS payment_statuses (
 -- 15. TABLA: day_passes (Pases por Día)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS day_passes (
-    id BIGSERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,01
     user_id BIGINT REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL,
     gym_id BIGINT NOT NULL REFERENCES gyms(id) ON UPDATE CASCADE ON DELETE CASCADE,
     plan_id BIGINT NOT NULL REFERENCES plans(id) ON UPDATE CASCADE ON DELETE RESTRICT,
